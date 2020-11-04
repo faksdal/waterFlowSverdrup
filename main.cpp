@@ -36,7 +36,7 @@ int main(void)
 	_delay_us(200000);
 	PORTB ^= 0b00100000;
 	_delay_us(200000);
-	_delay_us(500000);
+	_delay_us(490000);
 
 	// Here goes the main code...
 	switch(oled.initDisplay(displayTwiAddress, width, height)){
