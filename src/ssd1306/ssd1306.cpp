@@ -8,13 +8,22 @@
 #include <stdlib.h>
 #include <string.h>
 #include "ssd1306/ssd1306.h"
+#include "graphics/font5x7.h"
 
 
 
-
+//
+//	Function:		ssd1306::ssd1306()
+//
+//	Description:	- constructor for creating the object
+//
+//	arguments:		none
+//
+//	return value:	none
+//
+//
 ssd1306::ssd1306()
 {
-	slaveAddress = 0b00000000;
 }
 
 
@@ -22,110 +31,338 @@ ssd1306::ssd1306()
 //
 //	Function:		ssd1306::initDisplay()
 //
-//	Description:	calls twi.initBus(), this initialises i2c/twi bus, making it ready for transmission
-//					calls twi.sendStart(), this transmits the START condition onto the twi bus
-//					calls twi.sendSlaW(), transmitting the SLA+W to the twi bus
-//					calls initialisation sequence for the display
-//					calls twi.sendStop() to transmit a STOP onto the bus
+//	Description:	- allocates memory for the display buffer, returning an error if we fail
+//					- sets the private variables to hold the display width and height
+//					- clears the display buffer by writing them all to zero
+//					- calls twi.initBus() to initialise the twi bus
 //
-//	arguments:		none
+//	arguments:
 //
-//	return value:	ERROR_BUS_SPEED_OUT_OF_RANGE if the desired bus speed is not within i2c specs
+//	return value:
 //
 //
 uint8_t ssd1306::initDisplay(uint8_t _slaveAddress, uint8_t _displayWidth, uint8_t _displayHeight)
 {
 
-	bufferSize = (_displayWidth * ((_displayHeight + 7) / 8));
+	bufferSize = (_displayWidth * (_displayHeight / 8));
+
 	buffer = (uint8_t*) malloc(bufferSize);
 	if(!buffer){
 		twi.blinkLED(0b00100000, bufferSize, 0);
 		return(MEMORY_ALLOC_ERROR);
 	}
 
-	displayWidth	=_displayWidth;
+	displayWidth	= _displayWidth;
 	displayHeight	= _displayHeight;
+	slaveAddress	= _slaveAddress;
+	bufferIndex		= 0;
 
-	// Clear the buffer
-	clearDisplay();
-
-	//	Sets up the parameters for the twi bus. It should be sufficient enough to call this function once
+	// Set up the twi bus
 	twi.initBus(400000UL);
 
+	//	Initialisation sequence...
+	{	// Set display off, p.30
+		uint8_t cmdList[] = {SET_DISPLAY_OFF};
+		twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+	}
 
-	//
-	//	if we're ok this far, we can start sending the initialisation sequence to the ssd1306 display
-	//
-	//	this is done by sending a series of commands to the display, following a certain pattern
-	//
-	//	| Co |D/C#| 0/1 | 0/1 | 0/1 | 0/1 | 0/1 | 0/1 | ACK | Co |D/C#| 0/1 | 0/1 | 0/1 | 0/1 | 0/1 | 0/1 | 0/1 | 0/1 | ACK |
-	//
-	//		Co:		Continuation bit, set to logic zero. See p.20
-	//		D/C#:	Data or Command, set to logic 0 for command, 1 for data
-	//		0/1:	The actual data/command bits
-	//		ACK:	ACK generated after receiving each command or data byte
-	//
-	//
+	{	// Set MUX ratio, p.33
+		uint8_t cmdList[] = {CMD_SET_MUX_RATIO, MUX_RATIO_RESET};
+		twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+	}
 
-	/*
+	{	// Set display offset, p.34
+		uint8_t cmdList[] = {CMD_SET_DISPLAY_OFFSET, DISPLAY_OFFSET_RESET};
+		twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+	}
 
-	//		set MUX ratio, command 0xa8, see p.31
-			twi.write(WRITE_COMMAND, CMD_SET_MUX_RATIO);
-			twi.write(WRITE_DATA, MUX_RATIO_RESET);
+	{	// Set memory addressing mode, p.33
+		uint8_t cmdList[] = {CMD_SET_MEMORY_ADDRESSING_MODE, SET_HORIZONTAL_ADDRESSING_MODE};
+		//uint8_t cmdList[] = {CMD_SET_MEMORY_ADDRESSING_MODE, SET_VERTICAL_ADDRESSING_MODE};
+		//uint8_t cmdList[] = {CMD_SET_MEMORY_ADDRESSING_MODE, SET_PAGE_ADDRESSING_MODE};
+		twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+	}
 
-	//		set display offset, command 0xd3, see p.31
-			twi.write(0, CMD_SET_DISPLAY_OFFSET);
-			twi.write(1, DISPLAY_OFFSET_RESET);
+	{	// Set column start and end addresses, p.33
+			uint8_t cmdList[] = {CMD_SET_COLUMN_ADDRESS, SET_START_COLUMN_RESET, SET_END_COLUMN_RESET};
+			twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+	}
 
-	//		set display start line, command 0x40, see p.31
-	//
-			twi.write(0, CMD_SET_DISPLAY_START_LINE);
+	{	// Set page start and end addresses, p.33
+			uint8_t cmdList[] = {CMD_SET_PAGE_ADDRESS, SET_START_PAGE_RESET, SET_END_PAGE_RESET};
+			twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+	}
 
-	//		set segment re-map, command 0xa0, 0xa1, see p.31
-	//		when set to 0b10100000 (0xa0), column address 0 is mapped to SEG0 (reset)
-	//		when set to 0b10100001 (0xa1), column address 127 is mapped to SEG0 (flipped)
-			twi.write(0, SEGMENT_MAP_NORMAL);
+	{	// Set segment re-map, p.33
+		// We have the display in a re-mapped configuration
+		uint8_t cmdList[] = {SET_SEGMENT_MAP_REMAPPED};
+		//uint8_t cmdList[] = {SET_SEGMENT_MAP_NORMAL};
+		twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+	}
 
-	//		set COM output scan direction, command 0xc0, 0xc8, see p.31
-			twi.write(0, COM_OUTPUT_SCAN_NORMAL);
+	{	// Set COM output scan direction, p.34
+		// We have the display in a re-mapped configuration
+		//uint8_t cmdList[] = {SET_COM_OUTPUT_SCAN_NORMAL};
+		uint8_t cmdList[] = {SET_COM_OUTPUT_SCAN_REMAPPED};
+		twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+	}
 
-	//		set COM pins hardware configuration, command 0xda, see p.31
-			twi.write(0, CMD_SET_COM_PINS_HWCONF);
-			twi.write(1, COM_PINS_HWCONF);
+	{	// Set display start line, or GDDRAM start page address, p.33
+		uint8_t cmdList[] = {CMD_SET_GDDRAM_START_PAGE_0};
+		//uint8_t cmdList[] = {CMD_SET_DISPLAY_START_LINE_7};
+		//uint8_t cmdList[] = {64};
+		twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+	}
 
-	//		set contrast control, command 0x81, see p.28
-			twi.write(0, CMD_SET_CONTRAST_CONTROL);
-			twi.write(1, CONTRAST_RESET);
+	{	// Set COM pins hardware configuration, p.34
+		uint8_t cmdList[] = {CMD_SET_COM_PINS_HWCONF, SET_COM_PINS_HWCONF_RESET};		// normal small letter, writes every line
+		//uint8_t cmdList[] = {CMD_SET_COM_PINS_HWCONF, SET_COM_PINS_HWCONF_EN_SEQ};	// bigger letters, writes every alternate line
+		//uint8_t cmdList[] = {CMD_SET_COM_PINS_HWCONF, SET_COM_PINS_HWCONF_ALT_EN};	// something happened to vertical offset
+		//uint8_t cmdList[] = {CMD_SET_COM_PINS_HWCONF, SET_COM_PINS_HWCONF_DIS_SEQ};		// bigger letters, writes every alternate line
 
-	//		disable entire display On, command 0xa4, see p.28
-			twi.write(0, DISPLAY_RAM_CONTENT);
-			//twi.write(0, IGNORE_RAM_CONTENT);
+		twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+	}
 
-	//		set normal display, command 0xa6, see p. 28
-			twi.write(0, SET_NORMAL_DISPLAY);
-			//twi.write(0, SET_INVERSE_DISPLAY);
+	{	// Set contrast control, p.30
+		uint8_t cmdList[] = {CMD_SET_CONTRAST_CONTROL, SET_CONTRAST_RESET};
+		twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+	}
 
-	//		set oscillator frequency, command 0xd5, see p.32
-			twi.write(0, SET_CLOCK_DIVIDE_RATIO_OSC_FREQ);
-			twi.write(1, CLOCK_DIVIDE_RATIO_OSC_FREQ_RESET);
+	{	// Disable entire display on, p.30
+		uint8_t cmdList[] = {DISPLAY_RAM_CONTENT};
+		twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+	}
 
-	//		the display memory should be cleared before the charge pump command gets executed
-	//		memset(buffer, 0, WIDTH * ((HEIGHT + 7) / 8));
+	{	// Set normal/inverse display, p.30
+		uint8_t cmdList[] = {SET_NORMAL_DISPLAY};
+		twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+	}
 
-	//		enable charge pump regulator, command 0x8d, see p.3 in 'SSD1306 Application Note'
-			twi.write(0, SET_CHARGE_PUMPE);
-			twi.write(1, CHARGE_PUMPE_ENABLE);
-			twi.write(1, CHARGE_PUMPE_DISPLAY_ON);
+	{	// Set display clock divide ratio/oscillator frequency, p.34
+		//uint8_t cmdList[] = {CMD_SET_CLOCK_DIVIDE_RATIO_OSC_FREQ, 0b10000000};
+		uint8_t cmdList[] = {CMD_SET_CLOCK_DIVIDE_RATIO_OSC_FREQ, (CLOCK_DIVIDE_RATIO_RESET | (OSC_FREQ_RESET << 4))};
+		twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+	}
 
-	//		display On, command 0xaf, see p.28
-			twi.write(0, SET_DISPLAY_ON);
+	{	// Set charge pump regulator, p.35
+		uint8_t cmdList[] = {CMD_SET_CHARGE_PUMP, CHARGE_PUMP_ENABLE, CHARGE_PUMP_DISPLAY_ON};
+		//uint8_t cmdList[] = {CMD_SET_CHARGE_PUMP, 0x14, 0xaf};
+		twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+	}
 
-	*/
+	{	// Set display on, p.30
+		uint8_t cmdList[] = {SET_DISPLAY_ON};
+		twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+	}
 
-	return(TWI_INITDISPLAY_OK);
+	clearDisplay();
+	display();
+
+	return(TWI_INIT_OK);
 }
 //	END ssd1306::initDisplay()
 
+
+
+//
+//	Function:		ssd1306::print()
+//
+//	Description:	writes out text at the specified location in the display buffer
+//
+//	arguments:		int16_t x:		start x-location
+//					int16_t y:		start y-location
+//					uint8_t *_text:	text to be written
+//					uint8_t _len:	length of the string
+//
+//	return value:	none
+//
+//
+void ssd1306::print(int16_t _x, int16_t _y, uint8_t _text[], uint8_t _len)
+{
+	//	position the bufferIndex at the co-ordinates x and y
+	//	look up the text, letter by letter, in the font, an write out the
+	//	five elements that makes up one character
+
+	//	Calculate bufferIndex
+	bufferIndex = ((5*_x) + (displayWidth * _y));
+
+	//uint8_t *c = _text;
+
+	//*c -= 32;
+	//twi.blinkLED(0b00100000, c, 1);
+
+	uint8_t	*buf = _text;
+	uint8_t count = _len;
+
+	while(count--){
+		for(int i = 0; i < 5; i++){
+			buffer[bufferIndex++]	= (font5x7[(uint8_t)*buf-32][i]);
+		}
+		*buf++;
+	}
+
+
+	//character = _text[0]-32;
+/*
+	buffer[bufferIndex]		= font5x7[c][0];
+	buffer[bufferIndex++]	= font5x7[c][1];
+	buffer[bufferIndex++]	= font5x7[8][2];
+	buffer[bufferIndex++]	= font5x7[8][3];
+	buffer[bufferIndex++]	= font5x7[8][4];
+
+
+	buffer[bufferIndex++]	= font5x7[9][0];
+	buffer[bufferIndex++]	= font5x7[9][1];
+	buffer[bufferIndex++]	= font5x7[9][2];
+	buffer[bufferIndex++]	= font5x7[9][3];
+	buffer[bufferIndex++]	= font5x7[9][4];
+	*/
+
+	/*{	// Set display start line, or GDDRAM start page address, p.33
+		uint8_t cmdList[] = {64};
+		twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+	}*/
+/*
+	// START condition
+		TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWEN);
+		while(!(TWCR & (1 <<TWINT))){
+			//twi.blinkLED(0b00100000, 3, 1);
+		}
+		if((TWSR & 0xf8) != 0x08)
+			return;
+
+		// SLA+W
+		TWDR = TW_WRITE;
+		TWDR |= (slaveAddress << 1);
+		TWCR = (1 << TWINT) | (1 << TWEN);
+		while(!(TWCR & (1 << TWINT))){
+			//twi.blinkLED(0b00100000, 4, 1);
+		}
+		if((TWSR & 0xf8) != 0x18)
+			return;
+
+		// Write to GDDRAM command
+		TWDR = 0x40;
+		TWCR = (1 << TWINT) | (1 << TWEN);
+		while(!(TWCR & (1 << TWINT))){
+			//twi.blinkLED(0b00100000, 5, 1);
+		}
+		if((TWSR & 0xf8) != 0x28)
+			return;
+
+
+
+		// Write out the display buffer to GDDRAM
+		uint8_t		*buf	= buffer;
+		uint16_t	count	= bufferSize;
+		while(count--){
+			TWDR = *buf++;
+			TWCR = (1 << TWINT) | (1 << TWEN);
+			while(!(TWCR & (1 << TWINT))){
+				//twi.blinkLED(0b00100000, 3, 1);
+			}
+			if((TWSR & 0xf8) != 0x28)
+				return;
+		}
+
+		// STOP condition
+		TWCR = (1 << TWINT) | (1 << TWEN) | (1 << TWSTO);
+		_delay_us(100);
+*/
+
+}
+
+
+
+//
+//	Function:		ssd1306::display()
+//
+//	Description:	refresh display, putting content of RAM onto the display
+//
+//	arguments:		none
+//
+//	return value:	none
+//
+//
+uint8_t ssd1306::display(void)
+{
+	// TODO:	Send this to the twi module, should be in its own function
+/*
+	{	// Set display start line, p.33
+			uint8_t cmdList[] = {CMD_SET_DISPLAY_START_LINE_0};
+			twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+	}
+*/
+			// START condition
+			TWCR = (1 << TWINT) | (1 << TWSTA) | (1 << TWEN);
+			while(!(TWCR & (1 <<TWINT))){
+				//twi.blinkLED(0b00100000, 3, 1);
+			}
+			if((TWSR & 0xf8) != 0x08)
+				return(1);
+
+			// SLA+W
+			TWDR = TW_WRITE;
+			TWDR |= (slaveAddress << 1);
+			TWCR = (1 << TWINT) | (1 << TWEN);
+			while(!(TWCR & (1 << TWINT))){
+				//twi.blinkLED(0b00100000, 4, 1);
+			}
+			if((TWSR & 0xf8) != 0x18)
+				return(2);
+
+			// Write to GDDRAM command
+			TWDR = 0x40;
+			TWCR = (1 << TWINT) | (1 << TWEN);
+			while(!(TWCR & (1 << TWINT))){
+				//twi.blinkLED(0b00100000, 5, 1);
+			}
+			if((TWSR & 0xf8) != 0x28)
+				return(4);
+
+
+
+			// Write out the display buffer to GDDRAM
+			uint8_t		*buf	= buffer;
+			uint16_t	count	= bufferSize;
+			while(count--){
+				TWDR = *buf++;
+				TWCR = (1 << TWINT) | (1 << TWEN);
+				while(!(TWCR & (1 << TWINT))){
+					//twi.blinkLED(0b00100000, 3, 1);
+				}
+				if((TWSR & 0xf8) != 0x28)
+					return(5);
+			}
+
+			// STOP condition
+			TWCR = (1 << TWINT) | (1 << TWEN) | (1 << TWSTO);
+			_delay_us(100);
+
+			//
+			return(0);
+
+}
+// END ssd1306::display()
+
+
+
+//
+//	Function:		ssd1306::clearDisplay()
+//
+//	Description:	clear display memory buffer, writing it to all 0's
+//
+//	arguments:		none
+//
+//	return value:	none
+//
+//
+void ssd1306::clearDisplay(void)
+{
+	// clear the buffer
+	memset((uint8_t*) buffer, 0, bufferSize);
+}
+// END ssd1306::clearDisplay(
 
 
 
@@ -187,121 +424,7 @@ void ssd1306::drawPixel(int16_t x, int16_t y, uint16_t color) {
 
 
 
-//
-//	Function:		ssd1306::clearDisplay()
-//
-//	Description:	clear display memory buffer, writing it to all 0's
-//
-//	arguments:		none
-//
-//	return value:	none
-//
-//
-void ssd1306::clearDisplay(void)
-{
-	// clear the buffer
-	memset((uint8_t*) buffer, 0, bufferSize);
-}
-// END ssd1306::clearDisplay(
 
-
-
-//
-//	Function:		ssd1306::display()
-//
-//	Description:	refresh display, putting content of RAM onto the display
-//
-//	arguments:		none
-//
-//	return value:	none
-//
-//
-void ssd1306::display(void)
-{
-	/*
-	// steps for updating the display, writing memory content to the device
-
-	// - set pageadddress SSD1306_PAGEADDR		0x22
-	// - set page start						0x00
-	// - set page end address					0xff
-		twi.write(0, SET_PAGE_ADDRESS);
-		twi.write(1, START_PAGE_RESET);
-		twi.write(1, END_PAGE_RESET);
-
-	// - set column address SSD1306_COLUMNADDR	0x21
-	// - column start address					0
-	// - column end address					(WIDTH - 1)
-		twi.write(0, SET_COLUMN_ADDRESS);
-		twi.write(1, START_COLUMN_RESET);
-		twi.write(1, END_COLUMN_RESET);
-
-	// - start i2c transmission, sending slave address as parameter, beginTransmission
-	// - write the value 0x40
-		twi.write(0, SET_COLUMN_ADDRESS);
-
-	// - write the scren buffer, one byte at a time until done. There is a check here, if we exceed WIRE_MAX, the bus shuts down
-		//uint16_t count = displayWidth * ((displayHeight + 7) / 8);
-		uint16_t count = DISPLAY_BUFFER_SIZE;
-		volatile uint8_t *ptr = buffer;
-		twi.sendStart();
-		twi.sendSlaW(slaveAddress);
-		twi.write(1, 0x40);
-		while(count--)
-			twi.write(*ptr++);
-
-	*/
-	//   and restarts. This is probably some hardware thing. WIRE_MAX equals 32 in this piece of code
-	//   uint16_t count = WIDTH * ((HEIGHT + 7) / 8);
-	//    uint8_t *ptr = buffer;
-	//    if (wire) { // I2C
-	//      wire->beginTransmission(i2caddr);
-	//      WIRE_WRITE((uint8_t)0x40);
-	//      uint8_t bytesOut = 1;
-	//      while (count--) {
-	//        if (bytesOut >= WIRE_MAX) {
-	//          wire->endTransmission();
-	//          wire->beginTransmission(i2caddr);
-	//          WIRE_WRITE((uint8_t)0x40);
-	//          bytesOut = 1;
-	//        }
-	//        WIRE_WRITE(*ptr++);
-	//        bytesOut++;
-	//    }
-	//    wire->endTransmission();
-	//
-	//    } else { // SPI
-	//      SSD1306_MODE_DATA
-	//      while (count--)
-	//        SPIwrite(*ptr++);
-	//    }
-
-	/*
-	//uint8_t getDisplayWidth() = 128;
-	//uint8_t getDisplayHeight() = 64;
-	//uint8_t *buffer;
-
-
-	uint8_t *ptr	= buffer;
-	//uint16_t count	= WIDTH * ((HEIGHT + 7) / 8);
-	//for(int i = 0; i < 1024; i++)
-	//	buffer[i] |= (1 << (i/16 & 7));
-
-	//	set page address
-	twi.write(0, 0x22);
-	twi.write(1, 0);
-	twi.write(1, 0xff);
-
-	//	set column address
-	twi.write(0, 0x21);
-	twi.write(1, 0);
-	twi.write(1, 63);
-
-	//	write out content, counting to zero according to formula uint16_t count = WIDTH * ((HEIGHT + 7) / 8);
-	 */
-
-
-}
-// END ssd1306::display()
 
 
 /*

@@ -21,34 +21,40 @@
  *
  */
 
-#ifndef ATMEGA328P_WATERFLOWSVERDRUP_SRC_SSD1306_SSD1306_H_
-#define ATMEGA328P_WATERFLOWSVERDRUP_SRC_SSD1306_SSD1306_H_
+#ifndef __SSD1306_SSD1306_H__
+#define __SSD1306_SSD1306_H__
 
 #include <ssd1306/ssd1306CommandSet.h>
 #include "twi328P/twi328P.h"
 
-//#define DISPLAY_BUFFER_SIZE	128	//1136
 
 #define MEMORY_ALLOC_ERROR	0b10101010
 
 
 class ssd1306 {
 
-	uint8_t*	buffer;//[DISPLAY_BUFFER_SIZE];
-	uint16_t	bufferSize;
+	uint8_t*	buffer;
+	uint16_t	bufferSize, bufferIndex;
 	uint8_t		slaveAddress, displayWidth, displayHeight;
+
 
 public:
 	twi328P twi;
 
 	ssd1306();
 
-	uint8_t	initDisplay(uint8_t _slaveAddress, uint8_t displayWidth, uint8_t displayHeight);
+	uint8_t	initDisplay(uint8_t _slaveAddress, uint8_t _displayWidth, uint8_t _displayHeight);
+
+
+
+	void	drawPixel(int16_t _x, int16_t _y, uint16_t _color);
+	void	print(int16_t _x, int16_t _y, uint8_t _text[], uint8_t len);
+	void	clearDisplay(void);
 	uint8_t getDisplayWidth(void) { return(displayWidth);}
 	uint8_t getDisplayHeight(void) {return(displayHeight);}
-	void	drawPixel(int16_t x, int16_t y, uint16_t color);
-	void	clearDisplay(void);
-	void	display(void);
+
+
+	uint8_t	display(void);
 
 };
 

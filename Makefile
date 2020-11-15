@@ -13,7 +13,7 @@ INCLUDEPATH	= -I . -I ./src
 CFLAGS		= -Wall -O$(OPTIMIZE) $(INCLUDEPATH) $(INCLUDELIBRARY)
 AVRGCC		= avr-gcc $(CFLAGS) -mmcu=$(DEVICE)
 OUTPUTFILE	= wfs
-OBJ			= obj/twi328P.o obj/ssd1306.o obj/main.o
+OBJ			= obj/twi328P.o obj/ssd1306.o obj/main.o obj/yfs401.o
 ################################################################################
 
 default: link upload clean
@@ -28,6 +28,9 @@ obj/main.o: main.cpp
 
 obj/twi328P.o: src/twi328P/twi328P.cpp src/twi328P/twi328P.h
 	$(AVRGCC) -c src/twi328P/twi328P.cpp -o obj/twi328P.o
+	
+obj/yfs401.o: src/yfs401/yfs401.cpp src/yfs401/yfs401.h
+	$(AVRGCC) -c src/yfs401/yfs401.cpp -o obj/yfs401.o
 
 obj/ssd1306.o: src/ssd1306/ssd1306.cpp src/ssd1306/ssd1306.h src/ssd1306/ssd1306CommandSet.h
 	$(AVRGCC) -c src/ssd1306/ssd1306.cpp -o obj/ssd1306.o
