@@ -36,6 +36,9 @@ volatile	uint16_t	counter			= 0;
 
 
 
+//
+//	Interrupt Service Routine
+//
 ISR(INT1_vect)
 {
 	//pulses++;
