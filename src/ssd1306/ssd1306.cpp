@@ -28,6 +28,29 @@ ssd1306::ssd1306()
 
 
 
+volatile void ssd1306::displayOff(void)
+{
+	// Set display off, p.30
+	uint8_t cmdList[] = {SET_DISPLAY_OFF};
+	twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+
+	displayVisible = false;
+
+}
+
+
+
+volatile void ssd1306::displayOn(void)
+{
+	// Set display on, p.30
+	uint8_t cmdList[] = {SET_DISPLAY_ON};
+	twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
+
+	displayVisible = true;
+}
+
+
+
 //
 //	Function:		ssd1306::initDisplay()
 //
@@ -154,6 +177,8 @@ uint8_t ssd1306::initDisplay(uint8_t _slaveAddress, uint8_t _displayWidth, uint8
 		uint8_t cmdList[] = {SET_DISPLAY_ON};
 		twi.writeCommandList(slaveAddress, sizeof(cmdList), cmdList);
 	}
+
+	displayVisible = true;
 
 	clearDisplay();
 	display();

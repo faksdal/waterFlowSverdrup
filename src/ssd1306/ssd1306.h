@@ -39,6 +39,8 @@ class ssd1306 {
 
 
 public:
+	volatile bool	displayVisible;
+
 	twi328P twi;
 
 	ssd1306();
@@ -53,6 +55,8 @@ public:
 	uint8_t getDisplayWidth(void) { return(displayWidth);}
 	uint8_t getDisplayHeight(void) {return(displayHeight);}
 
+	volatile void	displayOff(void);
+	volatile void	displayOn(void);
 
 	uint8_t	display(void);
 
